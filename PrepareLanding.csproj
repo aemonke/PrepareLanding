@@ -1,0 +1,103 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Build:   dotnet build -c Release
+    Deploy:  dotnet build -c Release -p:DeployMod=true   (copies output\PrepareLanding into <RimWorldDir>\Mods\PrepareLanding)
+
+    Two assemblies are built:
+      - net472   -> output\PrepareLanding\1.6\Assemblies  (RimWorld 1.6, Mono / Unity; references from the Krafs.Rimworld.Ref package)
+      - net10.0  -> output\PrepareLanding\1.7\Assemblies  (RimWorld 1.7, Waylith / .NET; references from the RimWorld 1.7 install)
+
+    The 1.7 build references the game install (and the Harmony mod for 1.7). Override the locations with
+    -p:RimWorldDir="D:\Games\RimWorld" (or the RIMWORLD_DIR environment variable) and -p:Harmony17Dir=<folder with 0Harmony.dll>.
+    Use -p:TargetFramework=net472 to build only the 1.6 assembly (e.g. without a RimWorld 1.7 install).
+  -->
+
+  <PropertyGroup>
+    <TargetFrameworks>net472;net10.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>PrepareLanding</RootNamespace>
+    <AssemblyName>PrepareLanding</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <Prefer32Bit>false</Prefer32Bit>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DefineConstants>$(DefineConstants);WORLD_DATA</DefineConstants>
+    <ModOutputDir>$(MSBuildProjectDirectory)\output\PrepareLanding\</ModOutputDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RimWorldDir)' == '' And '$(RIMWORLD_DIR)' != ''">
+    <RimWorldDir>$(RIMWORLD_DIR)</RimWorldDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RimWorldDir)' == ''">
+    <RimWorldDir>C:\Program Files (x86)\Steam\steamapps\common\RimWorld</RimWorldDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Harmony17Dir)' == ''">
+    <Harmony17Dir>$(RimWorldDir)\..\..\workshop\content\294100\2009463077\1.7\Assemblies</Harmony17Dir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
+    <ModVersionFolder>1.6</ModVersionFolder>
+    <DefineConstants>$(DefineConstants);RIMWORLD_1_6</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <ModVersionFolder>1.7</ModVersionFolder>
+    <DefineConstants>$(DefineConstants);RIMWORLD_1_7</DefineConstants>
+    <!-- the game is not a .NET "app" we can reference by framework: everything comes from the install -->
+    <DisableImplicitFrameworkReferences>false</DisableImplicitFrameworkReferences>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DebugType>portable</DebugType>
+    <OutputPath>bin\Debug\$(ModVersionFolder)\</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>output\PrepareLanding\$(ModVersionFolder)\Assemblies\</OutputPath>
+  </PropertyGroup>
+
+  <!-- RimWorld 1.6 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4871" />
+    <PackageReference Include="Lib.Harmony" Version="2.3.3" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!-- RimWorld 1.7 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <Reference Include="Assembly-CSharp" HintPath="$(RimWorldDir)\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="UnityStubs" HintPath="$(RimWorldDir)\UnityStubs.dll" Private="false" />
+    <Reference Include="Waylith" HintPath="$(RimWorldDir)\Waylith.dll" Private="false" />
+    <Reference Include="Waylith.UnityCompat" HintPath="$(RimWorldDir)\Waylith.UnityCompat.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(Harmony17Dir)\0Harmony.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="output\**;libs\**;tools\**;packages\**" />
+    <None Remove="output\**;libs\**;tools\**;packages\**" />
+  </ItemGroup>
+
+  <Target Name="CheckRimWorld17Assemblies" BeforeTargets="ResolveAssemblyReferences" Condition="'$(TargetFramework)' == 'net10.0'">
+    <Error Condition="!Exists('$(RimWorldDir)\UnityStubs.dll')"
+           Text="RimWorld 1.7 assemblies not found in '$(RimWorldDir)'. Pass -p:RimWorldDir=&lt;path to RimWorld 1.7&gt; (or set RIMWORLD_DIR), or build only 1.6 with -p:TargetFramework=net472." />
+    <Error Condition="!Exists('$(Harmony17Dir)\0Harmony.dll')"
+           Text="Harmony for RimWorld 1.7 not found in '$(Harmony17Dir)'. Pass -p:Harmony17Dir=&lt;folder containing the 1.7 0Harmony.dll&gt;." />
+  </Target>
+
+  <Target Name="DeployMod" AfterTargets="Build" Condition="'$(DeployMod)' == 'true' And '$(Configuration)' == 'Release' And '$(TargetFramework)' != ''">
+    <PropertyGroup>
+      <ModDeployDir>$(RimWorldDir)\Mods\PrepareLanding\</ModDeployDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <ModFiles Include="$(ModOutputDir)**\*" Exclude="$(ModOutputDir)**\*.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ModFiles)" DestinationFiles="@(ModFiles->'$(ModDeployDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="PrepareLanding ($(ModVersionFolder)) deployed to $(ModDeployDir)" />
+  </Target>
+
+</Project>
